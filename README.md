@@ -1,6 +1,6 @@
 <div id="ditto-logo" align="center">
     <br />
-    <img src="./logo.jpg" alt="Ditto Logo" width="200"/>
+    <img src="./logo.jpg" alt="Ditto Logo" width="200" height="200"/>
     <h1>Ditto</h1>
     <h3>Open Source Discord Bot For Pokemon Raids</h3>
 </div>
