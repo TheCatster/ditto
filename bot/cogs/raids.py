@@ -15,17 +15,35 @@ class Raids(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(description="Shows all available raids.", usage="raids")
+    @commands.command()
     async def raids(self, ctx):
-        raids = self.bot.raid_data
+        """*Look at available raids.*
+
+        **Usage**: `{prefix}raids`
+        **Example**: `{prefix}raids`
+        """
+        raids = [
+            raid
+            for raid in self.bot.raid_data.values()
+            if raid.guild_id == ctx.guild.id
+        ]
+
+        if len(raids) == 0:
+            await ctx.send(
+                "There are currently no raids running. You should start one!"
+            )
+            return
 
         raid_list = []
 
         try:
             for chunked in chunk(raids, 5):
-                raid_list.append([
-                                     f"\n\n**-** {'Gmax' if raid.gmax else ''} {'Shiny' if raid.shiny else ''} {raid.pokemon.capitalize()}"
-                                     for raid in chunked])
+                raid_list.append(
+                    [
+                        f"\n\n**-** {'Gmax' if raid.gmax else ''} {'Shiny' if raid.shiny else ''} {raid.pokemon.capitalize()}"
+                        for raid in chunked
+                    ]
+                )
         except Exception as e:
             print(e)
             await ctx.send("An error has occurred.")
@@ -58,16 +76,34 @@ class Raids(commands.Cog):
         usage="queue [gym]",
     )
     async def queue(self, ctx, *, pokemon: str):
+        """*Look up a raid's queue*
+
+        `[pokemon]` is the name of the Pokemon raid you want to view.
+        **Usage**: `{prefix}queue [pokemon]`
+        **Example**: `{prefix}queue Pikachu`
+        """
+        await self.bot.wait_until_ready()
         raid = None
         for raid_id, raid in self.bot.raid_data.items():
             if raid.pokemon == pokemon.lower() and raid.guild_id == ctx.guild.id:
                 raid = raid
                 break
+            else:
+                raid = None
 
         if not raid:
+            await ctx.send(
+                "There is no raid running with that Pokemon, or you did not specify a "
+                "Pokemon, try using this command again."
+            )
             return
 
-        users = [user for raid_id, user in self.bot.queue_data.items() if self.bot.queue_data[raid.id]]
+        users = [
+            user
+            for user in self.bot.queue_data.values()
+            if user["guild_id"] == ctx.guild.id
+            if user["raid_id"] == raid.id
+        ]
 
         if len(users) > 0:
             description = []
@@ -80,10 +116,7 @@ class Raids(commands.Cog):
 
             try:
                 user_list = [
-                    [
-                        f"**-** {self.bot.get_user(user.user_id).mention}\n"
-                        for user in chunked
-                    ]
+                    [f"**-** <@{user['user_id']}>\n" for user in chunked]
                     for chunked in chunk(users, 5)
                 ]
             except Exception as e:
@@ -101,8 +134,8 @@ class Raids(commands.Cog):
                 discord.Embed(
                     title="Raid Queue",
                     description=f"**Current Pokemon:** "
-                                f"{raid_pokemon}\n\n"
-                                f"Current Queue:\n" + page,
+                    f"{raid_pokemon}\n\n"
+                    f"Current Queue:\n" + page,
                     color=discord.Colour.purple(),
                 )
                 for page in description
@@ -127,190 +160,222 @@ class Raids(commands.Cog):
                 "Pokemon, try using this command again."
             )
 
-    # TODO: Rewrite to GINO
-    @commands.command(description='Adds you to the queue for the raid you entered.', usage='join <raid>')
+    @commands.command()
     async def join(self, ctx, *, raid_pokemon: str):
+        """*Join an existing Pokemon raid.*
+
+        `[pokemon]` is the Pokemon raid you want to join
+        **Usage**: `{prefix}join [pokemon]`
+        **Example**: `{prefix}join Pikachu`
+        """
         raid = None
         for raid_id, raid in self.bot.raid_data.items():
             if raid.pokemon == raid_pokemon.lower() and raid.guild_id == ctx.guild.id:
                 raid = raid
                 break
-
+            else:
+                raid = None
         if raid:
             host_id = raid.host_id
-            queue = [user for raid_id, user in self.bot.queue_data.items() if self.bot.queue_data[f"{raid.id}+{ctx.message.author.id}"]]
+            queue = [
+                user
+                for user in self.bot.queue_data.values()
+                if user["raid_id"] == raid.id
+                if user["guild_id"] == ctx.guild.id
+            ]
             if len(queue) == 0:
-                await ctx.send('No raid is running for this pokemon.')
+                await ctx.send("No raid is running for this pokemon.")
                 self.bot.raid_data.pop(raid.id, None)
                 await raid.delete()
                 return
             if ctx.message.author not in queue:
-                self.bot.queue_data[f"{raid.id}+{ctx.message.author.id}"].raid_id = raid.id
-                self.bot.queue_data[f"{raid.id}+{ctx.message.author.id}"].user_id = ctx.message.author.id
-                self.bot.queue_data[f"{raid.id}+{ctx.message.author.id}"].guild_id = ctx.guild.id
-                if len(queue) >= 3:
-                    host = await get_create_user(host_id)
+                self.bot.queue_data[f"{raid.id}+{ctx.message.author.id}"] = {
+                    "raid_id": raid.id,
+                    "user_id": ctx.message.author.id,
+                    "guild_id": ctx.guild.id,
+                }
 
-                    await update_xp(
-                        user=host, modifier=0
-                    )
+                host = await get_create_user(host_id)
+                if len(queue) >= 4:
+                    await update_xp(user=host, modifier=0.2)
+                else:
+                    await update_xp(user=host, modifier=0)
 
-                await ctx.send(f'Added to queue for the {raid.pokemon.capitalize()} raid!')
+                participant = await get_create_user(ctx.message.author.id)
+
+                await update_xp(user=participant, modifier=0)
+
+                await ctx.send(
+                    f"Added to queue for the {raid.pokemon.capitalize()} raid!"
+                )
             else:
-                await ctx.send('You are already in the queue for this raid.')
+                await ctx.send("You are already in the queue for this raid.")
                 return
         else:
-            await ctx.send('No raid is running for this pokemon.')
+            await ctx.send("No raid is running for this pokemon.")
             return
 
-    """
-        This is still being rewritten.
-    @commands.command(description='Removes you from the queue for the raid you entered.', usage='leave <raid>')
+    @commands.command()
     async def leave(self, ctx, *, raid_pokemon: str):
-        async with aiosqlite.connect('cogs/db/pokemon.db') as conn:
-            try:
-                async with conn.execute('SELECT pokemon_name FROM Raids WHERE guild_id = ?', (ctx.guild.id,)) as c:
-                    raids = list(dict.fromkeys([raid[0].lower() for raid in await c.fetchall()]))
-                    raid = raid_pokemon.lower()
+        """*Leave a raid you are in.*
 
-                    if raid in raids:
-                        async with conn.execute('SELECT raid_id FROM Raids WHERE pokemon_name = ? COLLATE NOCASE',
-                                                (raid,)) as c:
-                            raid_id = await c.fetchone()
-                            raid_id = raid_id[0]
-                        async with conn.execute('SELECT user_id FROM Queue WHERE user_id = ? AND raid_id = ?',
-                                                (ctx.message.author.id, raid_id)) as c:
-                            queue = [user[0] for user in await c.fetchall()]
-                            if ctx.message.author.id in queue:
-                                await conn.execute('DELETE FROM Queue WHERE raid_id = ? AND guild_id = ? and user_id '
-                                                   '= ?',
-                                                   (raid_id, ctx.guild.id, ctx.message.author.id))
-                                await conn.commit()
-                                await logger_info(ctx)
-                                await ctx.send(f'Removed from the queue for the {raid.capitalize()} raid!')
-                            else:
-                                await ctx.send('You are not in the queue for this raid.')
-                                return
-                    else:
-                        await ctx.send('No such raid.')
-                        return
-            except Exception as e:
-                print(e)
-                await logger_error(ctx, e)
+        `[pokemon]` is the Pokemon raid you want to leave
+        **Usage**: `{prefix}leave [pokemon]`
+        **Example**: `{prefix}leave Pikachu`
+        """
+        raid = None
+        for raid_id, raid in self.bot.raid_data.items():
+            if raid.pokemon == raid_pokemon.lower() and raid.guild_id == ctx.guild.id:
+                raid = raid
+                break
+            else:
+                raid = None
+        if raid:
+            queue = [
+                user["user_id"]
+                for user in self.bot.queue_data.values()
+                if user["raid_id"] == raid.id
+                if user["guild_id"] == ctx.guild.id
+            ]
+            if ctx.message.author.id == raid.host_id:
+                await ctx.send(
+                    "You cannot leave your own raid. Please close it if you are done hosting."
+                )
                 return
-
-    @commands.command(description='Create a raid if no other currently exists.',
-                      usage='host <shiny: y/n> <gmax: y/n> <pokemon_name>')
-    async def host(self, ctx, shiny: str, gmax: str, pokemon_name: str):
-        async with aiosqlite.connect('cogs/db/pokemon.db') as conn:
-
-            try:
-                async with conn.execute('SELECT pokemon_name FROM Raids, Queue WHERE Queue.raid_id = Raids.raid_id '
-                                        'AND Raids.guild_id = ? '
-                                        ' AND Raids.guild_id = Queue.guild_id', (ctx.guild.id,)) as c:
-                    raids = list(dict.fromkeys([raid[0].lower() for raid in await c.fetchall()]))
-                    raid = pokemon_name.lower()
-            except Exception as e:
-                print(e)
-                await logger_error(ctx, e)
+            elif ctx.message.author.id not in queue:
+                await ctx.send("You are not in the queue for this raid.")
                 return
-
-            if raid in raids:
-                await ctx.send('There is already a raid running with this Pokemon in your server. Consider joining '
-                               'that one!')
+            else:
+                await ctx.send(
+                    f"Removed from the queue for the {raid.pokemon.capitalize()} raid!"
+                )
+                self.bot.queue_data.pop(f"{raid.id}+{ctx.message.author.id}", None)
                 return
+        else:
+            await ctx.send("No such raid.")
+            return
 
-            pokemon_name = pokemon_name.lower()
-            gmax = gmax.lower()
-            shiny = shiny.lower()
+    @commands.command()
+    async def host(self, ctx, gmax: str, shiny: str, *, pokemon_name: str):
+        """*Host your own Pokemon raid.*
 
-            with open('cogs/pokemon/data/pokemon.json', 'r') as f:
-                pokemon = json.load(f).keys()
-                if pokemon_name not in pokemon:
-                    await ctx.send('This is not a valid Pokemon name, or it has been misspelled. '
-                                   'Try running this command again.')
-                    return
-
-            if shiny != 'y' and shiny != 'n':
-                await ctx.send('Your option for shiny is invalid, try running this command again.')
+        `[pokemon]` is the Pokemon you want to host
+        `[gmax]` is a y or n and is whether or not your Pokemon is gmax
+        `[shiny]` is a y or n and is whether or not your Pokemon is shiny
+        **Usage**: `{prefix}host [gmax] [shiny] [pokemon]`
+        **Example**: `{prefix}host y y Pikachu`
+        """
+        raid = None
+        for raid_id, raid in self.bot.raid_data.items():
+            if raid.host_id == ctx.message.author.id and raid.guild_id == ctx.guild.id:
+                await ctx.send(
+                    "You cannot host multiple raids at once. Please close your existing one."
+                )
                 return
-
-            if gmax != 'y' and gmax != 'n':
-                await ctx.send('Your option for gmax is invalid, try running this command again.')
-                return
-
-            try:
-                await conn.execute('INSERT INTO Raids(guild_id, pokemon_name, shiny, gmax, host_id) '
-                                   'VALUES(?, ?, ?, ?, ?)',
-                                   (ctx.guild.id, pokemon_name.capitalize(), shiny, gmax, ctx.message.author.id))
-                async with conn.execute('SELECT raid_id FROM Raids WHERE pokemon_name = ? and guild_id = ?',
-                                        (pokemon_name.capitalize(), ctx.guild.id)) as c:
-                    raid_id = await c.fetchone()
-                    raid_id = raid_id[0]
-                await conn.execute('INSERT INTO Queue(raid_id, user_id, guild_id) VALUES(?, ?, ?)',
-                                   (raid_id, ctx.message.author.id, ctx.guild.id))
-                await conn.commit()
-                await logger_info(ctx)
-            except Exception as e:
-                print(e)
-
+            if raid.pokemon == pokemon_name.lower() and raid.guild_id == ctx.guild.id:
+                raid = raid
+                break
+            else:
+                raid = None
+        if raid:
             await ctx.send(
-                'Raid started, you have been automatically added to the queue, and you can check on the current '
-                'raid using the queue command.'
-                ' Invite your friends to join!')
+                "A raid for this pokemon is already running in this server. Consider joining it!"
+            )
+            return
 
-            await ctx.send('**TIP:** In order to get XP, get 3 or more people to be in the queue!')
+        pokemon_name = pokemon_name.lower()
 
-    @commands.command(description='Close a raid if you are the host or an admin.',
-                      usage='close <pokemon_name>')
+        if shiny == "y" or shiny == "n":
+            shiny = True if shiny == "y" else False
+
+        if gmax == "y" or gmax == "n":
+            gmax = True if gmax == "y" else False
+
+        if type(gmax) != bool or type(shiny) != bool:
+            await ctx.send(
+                "Please say 'y' or 'n' for gmax and shiny. Try running the command again."
+            )
+            return
+
+        if pokemon_name not in self.bot.pokemon_images.keys():
+            await ctx.send(
+                "This is not a valid Pokemon name, or it has been misspelled. "
+                "Try running this command again."
+            )
+            return
+
+        raid = await Raid.create(
+            guild_id=ctx.guild.id,
+            pokemon=pokemon_name,
+            shiny=shiny,
+            gmax=gmax,
+            host_id=ctx.message.author.id,
+        )
+
+        self.bot.raid_data[raid.id] = raid
+
+        self.bot.queue_data[f"{raid.id}+{ctx.message.author.id}"] = {
+            "raid_id": raid.id,
+            "user_id": ctx.message.author.id,
+            "guild_id": ctx.guild.id,
+        }
+
+        user = await get_create_user(ctx.message.author.id)
+        await user.update(times_hosted=user.times_hosted + 1).apply()
+
+        await ctx.send(
+            "Raid started, you have been automatically added to the queue, and you can check on the current "
+            "raid using the queue command."
+            " Invite your friends to join!"
+        )
+
+        await ctx.send(
+            "**TIP:** In order to get XP, get 3 or more people to be in the queue!"
+        )
+
+    @commands.command()
     async def close(self, ctx, pokemon_name: str):
-        async with aiosqlite.connect('cogs/db/pokemon.db') as conn:
-            try:
-                async with conn.execute('SELECT pokemon_name FROM Raids, Queue WHERE Queue.raid_id = Raids.raid_id '
-                                        'AND Raids.guild_id = ? '
-                                        ' AND Raids.guild_id = Queue.guild_id', (ctx.guild.id,)) as c:
-                    raids = list(dict.fromkeys([raid[0].lower() for raid in await c.fetchall()]))
-                    raid = pokemon_name.lower()
-            except Exception as e:
-                print(e)
-                await logger_error(ctx, e)
-                return
+        """*Close a raid you started.*
 
-            if raid not in raids:
-                await ctx.send('This raid cannot be found. Please type in a valid Pokemon name.')
-                return
+        `[pokemon]` is the Pokemon raid you want to close
+        **Usage**: `{prefix}close [pokemon]`
+        **Example**: `{prefix}close Pikachu`
+        """
+        raid = None
+        for raid_id, raid in self.bot.raid_data.items():
+            if raid.pokemon == pokemon_name.lower() and raid.guild_id == ctx.guild.id:
+                raid = raid
+                break
+            else:
+                raid = None
 
-            pokemon_name = pokemon_name.lower()
+        if not raid:
+            await ctx.send(
+                "This raid cannot be found. Please type in a valid Pokemon name."
+            )
+            return
 
-            async with conn.execute('SELECT raid_id FROM Raids WHERE pokemon_name = ? AND guild_id = ?',
-                                    (pokemon_name.capitalize(), ctx.guild.id)) as c:
-                raid_id = await c.fetchone()
-                raid_id = raid_id[0]
+        if (
+            raid.host_id != ctx.message.author.id
+            and not ctx.message.author.guild_permissions.administrator
+        ):
+            await ctx.send(
+                "You did not host this raid, and are not an admin. Please get someone else to "
+                "close it."
+            )
+            return
 
-            async with conn.execute('SELECT host_id FROM Raids WHERE raid_id = ? AND guild_id = ?',
-                                    (raid_id, ctx.guild.id)) as c:
-                raid_host = await c.fetchone()
+        try:
+            for queue_id, queue in self.bot.queue_data.items():
+                if queue["raid_id"] == raid.id:
+                    self.bot.raid_data.pop(queue_id, None)
+            await raid.delete()
+            self.bot.raid_data.pop(raid.id, None)
+        except Exception as e:
+            print(e)
+            return
 
-                raid_host = raid_host[0]
-                if raid_host != ctx.message.author.id or not ctx.message.author.guild_permissions.administrator:
-                    await ctx.send('You did not host this raid, and are not an admin. Please get someone else to '
-                                   'close it.')
-                    return
-
-            try:
-                await conn.execute('DELETE FROM Raids WHERE pokemon_name = ? AND guild_id = ?',
-                                   (pokemon_name.capitalize(), ctx.guild.id))
-                await conn.execute('DELETE FROM Queue WHERE raid_id = ? AND guild_id = ?',
-                                   (raid_id, ctx.guild.id))
-                await logger_info(ctx)
-                await conn.commit()
-            except Exception as e:
-                print(e)
-                await logger_error(ctx, e)
-                return
-
-            await ctx.send('Raid has been closed, and queue has been purged!')
-"""
+        await ctx.send("Raid has been closed, and queue has been purged!")
 
 
 def setup(bot):

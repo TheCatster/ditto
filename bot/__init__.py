@@ -66,7 +66,13 @@ async def on_ready():
         bot.pokemon_images = ujson.load(f)
     bot.guild_data = await preload_guild_data()
     bot.raid_data = await preload_raid_data()
-    bot.queue_data = {}
+    bot.queue_data = dict()
+    for raid in bot.raid_data.values():
+        bot.queue_data[f"{raid.id}+{raid.host_id}"] = {
+            "raid_id": raid.id,
+            "user_id": raid.host_id,
+            "guild_id": raid.guild_id,
+        }
     bot.loop.create_task(presence_task())
     bot.loop.create_task(sync_guild_data())
 
