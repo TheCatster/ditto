@@ -1,0 +1,32 @@
+version: '3'
+volumes:
+  postgres_volume:
+services:
+  db:
+    image: postgres
+    restart: unless-stopped
+    env_file:
+      .env
+    volumes:
+      - postgres_volume:/var/lib/postgresql/data/
+    ports:
+      - "5043:5043"
+  migration:
+    build: .
+    command: pipenv run alembic upgrade head
+    volumes:
+      - .:/code
+    depends_on:
+      - db
+    environment:
+      - POSTGRES_URI=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@db:$POSTGRES_PORT/bot
+  bot:
+    build: .
+    restart: unless-stopped
+    command: pipenv run python run.py
+    volumes:
+      - .:/code
+    depends_on:
+      - migration
+    environment:
+      - POSTGRES_URI=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@db:$POSTGRES_PORT/bot
