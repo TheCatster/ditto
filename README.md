@@ -1,9 +1,6 @@
-<div id="ditto-logo" align="center">
-    <br />
-    <img src="https://git.sr.ht/~thecatster/ditto/tree/master/item/logo.jpg" alt="Ditto Logo" width="150" height="150"/>
-    <h1>Ditto</h1>
-    <h3>Open Source Discord Bot For Pokemon Raids</h3>
-</div>
+# Ditto
+
+Open Source Discord Bot for Pokemon Raids
 
 ## About Ditto
 Hosting Pokemon raids with your friends? Use Ditto to ease the process and incentivize hosting! Ditto helps organize raids by having a fast queue system, that generates a random code each time the host is ready to start.
