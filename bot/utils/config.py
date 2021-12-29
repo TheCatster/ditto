@@ -3,8 +3,8 @@ import os
 
 default_config = {
     "prefix": "+",
-    "token": "NjgzNDQ2MTUzMTMxMzI3NTM3.Xlrq1A.0CH3D4F7AmZ3fYXCd9PLNgvhT9c1",
-    "database": "postgresql://postgres:Web042914@192.168.1.39:5432/ditto",
+    "token": "",
+    "database": "",
 }
 
 
